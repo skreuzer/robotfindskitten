@@ -119,18 +119,23 @@
 #define KITTEN  	1
 #define BOGUS		2
 
+#define INCUBATION  5
+
 typedef struct {
 	int x;
 	int y;
 	unsigned int color;
 	bool bold;
 	bool reverse;
+	bool infected;
+	int incubation;
 	chtype character;
 } screen_object;
 
 typedef struct {
 	int lines;
 	int cols;
+	int key_press;
 	unsigned int options;
 	unsigned int num_items;
 	unsigned int num_messages;
@@ -199,7 +204,7 @@ static void read_file ( char *fname ) {
 			if ( ( ret == 0 ) || ( ch == '\n' ) || ( ch == '\r' ) )
 			{
 				/* ignore blank lines and comments */
-				if ( len != 0 && ( buff[0] != '#' ) 
+				if ( len != 0 && ( buff[0] != '#' )
 					&& ( buff[0] != '%')) {
 					buff[len] = '\0';
 					add_message ( buff, len + 1 );
@@ -383,6 +388,7 @@ static void init ( unsigned int num ) {
 
 	state.lines = LINES;
 	state.cols = COLS;
+	state.key_press = 0;
 	if ( ( ( state.lines - HEADSIZE - FRAME ) * state.cols ) < (int) ( num + 2 ) ) {
 		(void) endwin();
 		(void) fprintf ( stderr, "Screen too small to fit all objects!\n" );
@@ -395,11 +401,15 @@ static void init ( unsigned int num ) {
 	state.items[ROBOT].reverse = false;
 	state.items[ROBOT].y = randy();
 	state.items[ROBOT].x = randx();
+	state.items[ROBOT].infected = false;
+	state.items[ROBOT].incubation = 0;
 
 	/* set up kitten */
 	state.items[KITTEN].character = (chtype)randchar();
 	state.items[KITTEN].bold = randbold();
 	state.items[KITTEN].reverse = false;
+	state.items[KITTEN].infected = false;
+	state.items[KITTEN].incubation = 0;
 	do {
 		state.items[KITTEN].y = randy();
 		state.items[KITTEN].x = randx();
@@ -410,6 +420,8 @@ static void init ( unsigned int num ) {
 		state.items[i].character = (chtype)randchar();
 		state.items[i].bold = randbold();
 		state.items[i].reverse = false;
+		state.items[i].infected = (rand() % 10 == 0 ? true : false);
+		state.items[i].incubation = 0;
 		while ( true ) {
 			state.items[i].y = randy();
 			state.items[i].x = randx();
@@ -418,7 +430,7 @@ static void init ( unsigned int num ) {
 			if ( object_equal ( state.items[KITTEN], state.items[i] ) )
 				continue;
 			for ( j = 0; j < i; j++ ) {
-				if ( object_equal ( state.items[j], 
+				if ( object_equal ( state.items[j],
 					state.items[i] ) ) break;
 			}
 			if ( j == i ) break;
@@ -531,10 +543,10 @@ static void handle_resize(void) {
 		ybound = state.items[i].y;
 	}
 
-	/* has the resize hidden any items? */ 
+	/* has the resize hidden any items? */
 	if (xbound >= COLS - FRAME*2 || ybound >= HEADSIZE + LINES - FRAME*2) {
 		(void) endwin();
-		(void) fprintf(stderr, 
+		(void) fprintf(stderr,
 			"You crushed the simulation. And robot. And kitten.\n");
 		exit(EXIT_FAILURE);
 	}
@@ -548,7 +560,7 @@ static void instructions(void) {
 	(void) clear();
 	(void) move ( 0, 0 );
 	(void) printw ( "robotfindskitten %s\n", PACKAGE_VERSION );
-	(void) printw ( 
+	(void) printw (
 "By the illustrious Leonard Richardson (C) 1997, 2000\n"\
 "Written originally for the Nerth Pork robotfindskitten contest\n\n"\
 "In this game, you are robot (#). Your job is to find kitten. This task\n"\
@@ -627,7 +639,12 @@ static void main_loop(void) {
 
 	fromright = false;
 
-	while ( ( ch = getch() ) != 0 ) {
+	while ( true ) {
+		ch = getch();
+		state.key_press++;
+		if ((state.items[ROBOT].infected == true) && (state.key_press <= state.items[ROBOT].incubation))
+			continue;
+		state.key_press = 0;
 		y = state.items[ROBOT].y;
 		x = state.items[ROBOT].x;
 		switch ( ch ) {
@@ -724,6 +741,9 @@ static void main_loop(void) {
 				break;
 			case BBOGUS:
 				message ( state.messages[bnum] );
+				state.items[ROBOT].infected = state.items[bnum].infected;
+				if (state.items[ROBOT].infected == true)
+					state.items[ROBOT].incubation++;
 				break;
 			default:
 				message ( "Well, that was unexpected..." );
